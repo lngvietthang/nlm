@@ -7,16 +7,16 @@ class NeuralLM(object):
 		self.arg = arg
 
 		#Placeholders for input
-		self.wordIndices = tf.placeholder(tf.int32, [None, maxContentLength], name="inputWordIndices")
-		self.contexLength = tf.placeholder(tf.int32, [None], name='inputContextLengths')
-		self.wordTargets = tf.placeholder(tf.int32, [None], name='targetWordIndices')
-		self.newLr = tf.placeholder(tf.float32, [], name="newLearningRate")
+		self.x = tf.placeholder(tf.int32, [None, maxContentLength], name="inputWordIndices")
+		self.xLen = tf.placeholder(tf.int32, [None], name='inputContextLengths')
+		self.y = tf.placeholder(tf.int32, [None], name='targetWordIndices')
+		# self.newLr = tf.placeholder(tf.float32, [], name="newLearningRate")
 
 		#Embedding Layer
 		with tf.variable_scope("wordEmbeddingLayer"):
 			with tf.device("/cpu:0"):
 				self.embedding = tf.get_variable("wordEmbeddingMatrix", [vocabSize, embDim], dtype=tf.float32)
-				wordEmbedded = tf.nn.embedding_lookup(self.embedding, self.wordIndices, name="wordEmbeddedVectors")
+				wordEmbedded = tf.nn.embedding_lookup(self.embedding, self.x, name="wordEmbeddedVectors")
 
 		#TODO: Dropout
 		#...
@@ -27,11 +27,11 @@ class NeuralLM(object):
 			for i in range(rnnLayers):
 				rnnCells.append(tf.contrib.rnn.LSTMBlockCell(rnnSize, name="rnnLayer-{}".format(i+1)))
 			rnnMultiCells = tf.contrib.rnn.MultiRNNCell(rnnCells)
-			contextEmbedded = tf.nn.dynamic_rnn(cell=rnnMultiCells, inputs=wordEmbedded, sequence_length=self.contexLength, dtype=tf.float32)
+			contextEmbedded = tf.nn.dynamic_rnn(cell=rnnMultiCells, inputs=wordEmbedded, sequence_length=self.xLen, dtype=tf.float32)
 			self.rnnVariables = tf.get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES, scope=rnnVS)
 
 			batchRange = tf.range(tf.shape(contextEmbedded)[0])  # <- batchSize: [0, 1, ..., batchSize - 1]
-			indices = tf.stack([batchRange, self.contexLength - 1], axis=1) # indices: [[0, L[0] - 1], [1, L[1] - 1], ..., [batchSize - 1, L[batchSize-1] -1]]
+			indices = tf.stack([batchRange, self.xLen - 1], axis=1) # indices: [[0, L[0] - 1], [1, L[1] - 1], ..., [batchSize - 1, L[batchSize-1] -1]]
 			contextEncoded = tf.gather_nd(contextEmbedded, indices)
 
 		#Feed-Forward Layer
@@ -42,14 +42,20 @@ class NeuralLM(object):
 			logits = tf.nn.xw_plus_b(contextEncoded, self.W, self.b, name="feedforwardTargerLayer")
 
 			self.topKPred = tf.nn.top_k(logits, k=3, name="topKPredictions")  #TODO: set K outside
-			self.predictions = tf.argmax(logits, 1, name="predictions")
+			self.predictions = tf.argmax(logits, 1, name="predictions")  # return type = tf.int64
 			self.ffVariables = tf.get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES, scope=ffVS)
 
 		#Loss
 		with tf.get_variable_scope("loss"):
-			losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=self.wordTargets, name='losses')
+			losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=self.y, name='losses')
 			self.cost = tf.reduce_mean(losses, name="cost")  # Use mean to make the gradient magnitude independent with batch size
 
+		#Accuracy
+		with tf.get_variable_scope("accuracy"):
+			nbCorrects = tf.equal(tf.cast(self.predictions, tf.int32), self.y)
+			self.accuracy = tf.reduce_mean(tf.cast(nbCorrects, tf.float32))
+
+		#
 		self.globalStep = tf.Variable(0, name='globalStep', trainable=False)
 		self.lr = tf.Variable(0.0, trainable=False)
 
@@ -65,17 +71,13 @@ class NeuralLM(object):
 		#Train
 		self.trainOp = self.optimizer.apply_gradients(zip(grads, tvars), global_step=self.globalStep)
 
-		#Learning rate update
-		self.updateLr = tf.assign(self.lr, self.newLr)
+		# #Learning rate update
+		# self.updateLr = tf.assign(self.lr, self.newLr)
 
 	def assignLearningRate(self, sess, lrValue):
-		sess.run(sefl.updateLr, feed_dict={self.newLr: lrValue})
-
-	
-
+		# sess.run(sefl.updateLr, feed_dict={self.newLr: lrValue})
+		sess.run(self.lr.assign(lrValue))
 
 
-
-
-
-		
+	def assignPretrainWordEmbedding(self, sess, wordEmbedding):
+		sess.run(self.embedding.assign(wordEmbedding))
