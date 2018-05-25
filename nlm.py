@@ -6,6 +6,14 @@ class NeuralLM(object):
 		super(NeuralLM, self).__init__()
 		self.arg = arg
 
+		maxContentLength = arg['maxContentLength']
+		vocabSize = arg['vocabSize']
+		embDim = arg['embDim']
+		rnnLayers = arg['rnnLayers']
+		rnnSize = arg['rnnSize']
+		nbClasses = arg['nbClasses']
+		topK = arg['topK']
+
 		#Placeholders for input
 		self.x = tf.placeholder(tf.int32, [None, maxContentLength], name="inputWordIndices")
 		self.xLen = tf.placeholder(tf.int32, [None], name='inputContextLengths')
@@ -41,7 +49,7 @@ class NeuralLM(object):
 
 			logits = tf.nn.xw_plus_b(contextEncoded, self.W, self.b, name="feedforwardTargerLayer")
 
-			self.topKPred = tf.nn.top_k(logits, k=3, name="topKPredictions")  #TODO: set K outside
+			self.topKPred = tf.nn.top_k(logits, k=topK, name="topKPredictions")
 			self.predictions = tf.argmax(logits, 1, name="predictions")  # return type = tf.int64
 			self.ffVariables = tf.get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES, scope=ffVS)
 
@@ -73,6 +81,12 @@ class NeuralLM(object):
 
 		# #Learning rate update
 		# self.updateLr = tf.assign(self.lr, self.newLr)
+
+		#Summaries -> Tensorbroad
+		costSummary = tf.summary.scalar("costSummary", self.cost)
+		accSummary = tf.summary.scalar("accSummary", self.accuracy)
+		self.summaryOp = tf.summary.merge([costSummary, accSummary])
+
 
 	def assignLearningRate(self, sess, lrValue):
 		# sess.run(sefl.updateLr, feed_dict={self.newLr: lrValue})
