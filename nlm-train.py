@@ -1,6 +1,7 @@
 import os
 import datetime
 import time
+import math
 
 import datetime
 import tensorflow as tf
@@ -8,6 +9,13 @@ import tensorflow as tf
 import utils
 
 from nlm import NeuralLM
+
+
+def stepDecayLearningRate(epoch, initLR, dropRate, nbEpochsDrop):
+	# Ref: https://machinelearningmastery.com/using-learning-rate-schedules-deep-learning-models-python-keras/
+	# LearningRate = InitialLearningRate * DropRate^floor(Epoch / EpochDrop)
+	return initLR * math.pow(dropRate, math.floor((1 + epoch) / nbEpochsDrop))
+
 
 
 def run_epoch(sess, model, data, batchSize, summaryWriter, training=True, verbose=False):
@@ -82,6 +90,8 @@ def evaluation_run(sess, step, model, data, summaryWriter, verbose=False):
 		timeStr = datetime.datetime.now().isoformat()
 		print "--> {}: step {}, cost: {:g}, acc: {:g}".format(timeStr, step, cost, accuracy)
 
+	return cost, accuracy
+
 
 def main():
 	path2trainData = "xxxxx"
@@ -92,9 +102,9 @@ def main():
 	# Training Config
 	nbEpoch = 100
 	batchSize = 512
-	lr = 1
-	lrDecay = 0.5
-	nbEpochBeforeLRDecay = 4
+	initLR = 0.1
+	dropRateLR = 0.5
+	nbEpochsDropLR = 5
 
 	# TensorBroad: Save summaries
 	timestamp = str(int(time.time()))
@@ -144,8 +154,8 @@ def main():
 			neuralLM.assignPretrainWordEmbedding(sess, pretrainWordEmbedding)
 
 			for e in range(nbEpoch):
-				newLRDecay = lrDecay ** max(e + 1 - nbEpochBeforeLRDecay, 0.0)
-				neuralLM.assignLearningRate(sess, lr * newLRDecay)
+				newLR = stepDecayLearningRate(e, initLR, dropRateLR, nbEpochsDropLR)
+				neuralLM.assignLearningRate(sess, newLR)
 
 				# Training progress
 				print "-> Epoch {}: Training Progress".format(e)
@@ -153,7 +163,7 @@ def main():
 
 				# Development progress
 				print "-> Epoch {}: Development Progress".format(e)
-				evaluation_run(sess, currStep, neuralLM, devData, devSummmaryWriter, verbose=True)
+				cost, acc = evaluation_run(sess, currStep, neuralLM, devData, devSummmaryWriter, verbose=True)
 
 				# Save checkpoint
 				path = saver.save(sess, ckpPrefix, global_step=currStep)
