@@ -98,9 +98,9 @@ def main():
 
 	# TensorBroad: Save summaries
 	timestamp = str(int(time.time()))
-    path2out = os.path.join("xxxxx", timestamp)
-    if not os.path.exists(path2out):
-    	os.makedirs(path2out)
+	path2out = os.path.join("xxxxx", timestamp)
+	if not os.path.exists(path2out):
+		os.makedirs(path2out)
 	path2logDir = os.path.join(path2out, "logs")
 	path2ckp = os.path.join(path2out, "checkpoints")
 	ckpPrefix = os.path.join(path2ckp, "NeuralLM")
