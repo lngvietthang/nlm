@@ -18,8 +18,9 @@ def stepDecayLearningRate(epoch, initLR, dropRate, nbEpochsDrop):
 
 
 
-def run_epoch(sess, model, data, batchSize, summaryWriter, training=True, verbose=False):
-	
+def run_epoch(sess, model, data, batchSize, summaryWriter, trainning=True, verbose=False):
+	x, xLen, y = data
+
 	totalIns = x.shape[0]
 	nbBatch = totalIns / batchSize + (totalIns % batchSize > 0)
 
@@ -38,6 +39,7 @@ def run_epoch(sess, model, data, batchSize, summaryWriter, training=True, verbos
 
 	bStart = 0
 	step = 0
+	print 'Number of Batches:', nbBatch
 	for i in range(nbBatch):
 		#
 		bEnd = min(bStart+batchSize, totalIns)
@@ -94,10 +96,8 @@ def evaluation_run(sess, step, model, data, summaryWriter, verbose=False):
 
 
 def main():
-	path2trainData = "xxxxx"
-	path2devData = "xxxxx"
-	path2pretrainWordEmbedding = "xxxxx"
-	path2config = "xxxxx"
+	path2data = "data/nlm-input/"
+	path2config = "NeuralLM.config"
 
 	# Training Config
 	nbEpoch = 100
@@ -108,7 +108,7 @@ def main():
 
 	# TensorBroad: Save summaries
 	timestamp = str(int(time.time()))
-	path2out = os.path.join("xxxxx", timestamp)
+	path2out = os.path.join("out/", timestamp)
 	if not os.path.exists(path2out):
 		os.makedirs(path2out)
 	path2logDir = os.path.join(path2out, "logs")
@@ -119,21 +119,10 @@ def main():
 	# Model checkpoint config
 	nbRecentCkpKeep = 2
 
-	# modelConfig = {
-	# 	'maxContentLength': 6,
-	# 	'vocabSize': 3000,
-	# 	'embDim': 100,
-	# 	'rnnLayers': 2,
-	# 	'rnnSize': 512,
-	# 	'nbClasses': 3000,
-	# 	'topK': 3
-	# }
 	modelConfig = utils.loadModelConfig(path2config)
 
-	trainData = utils.loadData(path2trainData)
-	devData = utils.loadData(path2devData)
-
-	pretrainWordEmbedding = utils.loadPretrainWordEmbedding(path2pretrainWordEmbedding)
+	trainData, wordEmbedding = utils.loadData(path2data, "train", loadWordEmbedding=True)
+	devData = utils.loadData(path2data, "dev")
 
 	with tf.Graph().as_default():
 		# Ref: https://stackoverflow.com/questions/44873273/what-do-the-options-in-configproto-like-allow-soft-placement-and-log-device-plac
@@ -151,7 +140,7 @@ def main():
 			sess.run(tf.global_variables_initializer())
 
 			# Assign pretrain word embedding to embedding layer of model
-			neuralLM.assignPretrainWordEmbedding(sess, pretrainWordEmbedding)
+			neuralLM.assignPretrainWordEmbedding(sess, wordEmbedding)
 
 			for e in range(nbEpoch):
 				newLR = stepDecayLearningRate(e, initLR, dropRateLR, nbEpochsDropLR)

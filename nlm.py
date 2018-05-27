@@ -13,6 +13,7 @@ class NeuralLM(object):
 		rnnSize = arg['rnnSize']
 		nbClasses = arg['nbClasses']
 		topK = arg['topK']
+		maxGradNorm = arg['maxGradNorm']
 
 		#Placeholders for input
 		self.x = tf.placeholder(tf.int32, [None, maxContentLength], name="inputWordIndices")
@@ -35,33 +36,35 @@ class NeuralLM(object):
 			for i in range(rnnLayers):
 				rnnCells.append(tf.contrib.rnn.LSTMBlockCell(rnnSize, name="rnnLayer-{}".format(i+1)))
 			rnnMultiCells = tf.contrib.rnn.MultiRNNCell(rnnCells)
-			contextEmbedded = tf.nn.dynamic_rnn(cell=rnnMultiCells, inputs=wordEmbedded, sequence_length=self.xLen, dtype=tf.float32)
-			self.rnnVariables = tf.get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES, scope=rnnVS)
-
-			batchRange = tf.range(tf.shape(contextEmbedded)[0])  # <- batchSize: [0, 1, ..., batchSize - 1]
+			contextEmbedded, _ = tf.nn.dynamic_rnn(cell=rnnMultiCells, inputs=wordEmbedded, sequence_length=self.xLen, dtype=tf.float32)
+			batchSize = tf.shape(contextEmbedded)[0]
+			batchRange = tf.range(batchSize)  # <- batchSize: [0, 1, ..., batchSize - 1]
 			indices = tf.stack([batchRange, self.xLen - 1], axis=1) # indices: [[0, L[0] - 1], [1, L[1] - 1], ..., [batchSize - 1, L[batchSize-1] -1]]
 			contextEncoded = tf.gather_nd(contextEmbedded, indices)
 
+			self.rnnVariables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "rnnWordLayer")
+
 		#Feed-Forward Layer
-		with tf.get_variable_scope("ffTargetLayer") as ffVS:
+		with tf.variable_scope("ffTargetLayer") as ffVS:
 			W = tf.get_variable("ffTargetWeight", shape=[rnnSize, nbClasses], dtype=tf.float32)
 			b = tf.get_variable("ffTargetBias", shape=[nbClasses], dtype=tf.float32)
 
-			logits = tf.nn.xw_plus_b(contextEncoded, self.W, self.b, name="feedforwardTargerLayer")
+			logits = tf.nn.xw_plus_b(contextEncoded, W, b, name="feedforwardTargerLayer")
 
 			self.topKPred = tf.nn.top_k(logits, k=topK, name="topKPredictions")
 			self.predictions = tf.argmax(logits, 1, name="predictions")  # return type = tf.int64
-			self.ffVariables = tf.get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES, scope=ffVS)
+			self.ffVariables = tf.get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES, scope="ffTargetLayer")
 
 		#Loss
-		with tf.get_variable_scope("loss"):
+		with tf.variable_scope("loss"):
 			losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=self.y, name='losses')
 			self.cost = tf.reduce_mean(losses, name="cost")  # Use mean to make the gradient magnitude independent with batch size
 
 		#Accuracy
-		with tf.get_variable_scope("accuracy"):
+		with tf.variable_scope("accuracy"):
 			nbCorrects = tf.equal(tf.cast(self.predictions, tf.int32), self.y)
 			self.accuracy = tf.reduce_mean(tf.cast(nbCorrects, tf.float32))
+			#TODO: Get TopK Accuracy
 
 		#
 		self.globalStep = tf.Variable(0, name='globalStep', trainable=False)
