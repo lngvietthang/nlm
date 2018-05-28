@@ -16,10 +16,9 @@ class NeuralLM(object):
 		maxGradNorm = arg['maxGradNorm']
 
 		#Placeholders for input
-		self.x = tf.placeholder(tf.int32, [None, maxContentLength], name="inputWordIndices")
+		self.x = tf.placeholder(tf.int32, [None, None], name="inputWordIndices")
 		self.xLen = tf.placeholder(tf.int32, [None], name='inputContextLengths')
-		self.y = tf.placeholder(tf.int32, [None], name='targetWordIndices')
-		# self.newLr = tf.placeholder(tf.float32, [], name="newLearningRate")
+		self.y = tf.placeholder(tf.int32, [None, None], name='targetWordIndices')
 
 		#Embedding Layer
 		with tf.variable_scope("wordEmbeddingLayer"):
@@ -37,10 +36,6 @@ class NeuralLM(object):
 				rnnCells.append(tf.contrib.rnn.LSTMBlockCell(rnnSize, name="rnnLayer-{}".format(i+1)))
 			rnnMultiCells = tf.contrib.rnn.MultiRNNCell(rnnCells)
 			contextEmbedded, _ = tf.nn.dynamic_rnn(cell=rnnMultiCells, inputs=wordEmbedded, sequence_length=self.xLen, dtype=tf.float32)
-			batchSize = tf.shape(contextEmbedded)[0]
-			batchRange = tf.range(batchSize)  # <- batchSize: [0, 1, ..., batchSize - 1]
-			indices = tf.stack([batchRange, self.xLen - 1], axis=1) # indices: [[0, L[0] - 1], [1, L[1] - 1], ..., [batchSize - 1, L[batchSize-1] -1]]
-			contextEncoded = tf.gather_nd(contextEmbedded, indices)
 
 			self.rnnVariables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "rnnWordLayer")
 
@@ -49,16 +44,23 @@ class NeuralLM(object):
 			W = tf.get_variable("ffTargetWeight", shape=[rnnSize, nbClasses], dtype=tf.float32)
 			b = tf.get_variable("ffTargetBias", shape=[nbClasses], dtype=tf.float32)
 
-			logits = tf.nn.xw_plus_b(contextEncoded, W, b, name="feedforwardTargerLayer")
+			originalShape = tf.shape(contextEmbedded)
+			contextEmbedded2D = tf.reshape(contextEmbedded, [-1, rnnSize])  # [BatchSize, InputLength, RNNSize] -> [BatchSize * InputLength, RNNSize]
+
+			logits = tf.nn.xw_plus_b(contextEmbedded2D, W, b, name="feedforwardTargerLayer")
+
+			logits = tf.reshape(logits, originalShape) # [BatchSize * InputLength, RNNSize] -> [BatchSize, InputLength, RNNSize]
 
 			self.topKPred = tf.nn.top_k(logits, k=topK, name="topKPredictions")
-			self.predictions = tf.argmax(logits, 1, name="predictions")  # return type = tf.int64
+			self.predictions = tf.argmax(logits, 2, name="predictions")  # return type = tf.int64
 			self.ffVariables = tf.get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES, scope="ffTargetLayer")
 
 		#Loss
 		with tf.variable_scope("loss"):
 			losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=self.y, name='losses')
-			self.cost = tf.reduce_mean(losses, name="cost")  # Use mean to make the gradient magnitude independent with batch size
+			lossMask = tf.sequence_mask(self.xLen, maxlen=maxContentLength)
+			losses = tf.contrib.seq2seq.sequence_loss(logits, self.y, weights=lossMask, average_across_timesteps=False, average_across_batch=True)
+			self.cost = tf.reduce_sum(losses, name="cost")
 
 		#Accuracy
 		with tf.variable_scope("accuracy"):
