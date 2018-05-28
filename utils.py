@@ -203,6 +203,19 @@ def getStatsInfo(lstSents, wordFreqDict, rareTokens):
 		print sentLen, freq
 
 
+def mapIndex2Word(lstIndices, invertVocab):
+	words = []
+	for index in lstIndices:
+		if index in invertVocab:
+			words.append(invertVocab[index])
+		elif index == 0:
+			words.append(u'<PAD>')
+		else:
+			raise ValueError('Invert Vocabulary do not contain key: {}'.format(index))
+
+	return words
+
+
 def main():
 	# a = np.array(range(10), dtype=np.int)
 	# b = np.array(range(20, 30), dtype=np.int)
